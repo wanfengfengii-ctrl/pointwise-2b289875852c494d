@@ -1,6 +1,6 @@
 import sqlite3
 
-from spectra.storage.schema import install_schema, validate_schema
+from spectra.storage.schema import install_schema, migrate_schema, validate_schema
 
 
 def configure_connection(connection):
@@ -17,6 +17,8 @@ def open_database(path):
         version = connection.execute("PRAGMA user_version").fetchone()[0]
         if version == 0:
             install_schema(connection)
+        elif version == 1:
+            migrate_schema(connection)
         else:
             validate_schema(connection)
     except BaseException:

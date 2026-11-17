@@ -1,5 +1,5 @@
 from spectra.catalog.database import open_database
-from spectra.catalog.ingestion import ingest_fixed_stream
+from spectra.catalog.ingestion import ingest_stream
 from spectra.access.metadata import describe_revision
 from spectra.access.cells import read_cell
 from spectra.access.selection import select_rows
@@ -15,7 +15,7 @@ class Archive:
         return self._connection
 
     def ingest(self, chunks):
-        return ingest_fixed_stream(self._require_open(), chunks)
+        return ingest_stream(self._require_open(), chunks)
 
     def describe(self, revision):
         return describe_revision(self._require_open(), revision)

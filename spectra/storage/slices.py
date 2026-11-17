@@ -14,6 +14,10 @@ class SliceWindow:
     def byte_count(self):
         return 4 * (self.stop - self.start)
 
+    @property
+    def byte_stop(self):
+        return 4 * self.stop
+
 
 def normalize_slice(length, start, stop):
     if type(length) is not int or length < 0:

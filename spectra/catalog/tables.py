@@ -1,8 +1,12 @@
 from fractions import Fraction
 
 from spectra.columns.fixed import FixedColumn
-from spectra.columns.types import FixedJType
+from spectra.columns.types import FixedJType, VariableJType
 from spectra.columns.scaling import Scaling
+
+
+def _kind_code(kind):
+    return kind.letter if kind.is_variable else "fixed"
 
 
 def stage_table(session, layout):
@@ -19,25 +23,36 @@ def stage_table(session, layout):
         scale, zero = column.scaling.scale, column.scaling.zero
         connection.execute(
             "INSERT INTO columns(revision,hdu_index,ordinal,name,repeat,tnull,"
-            "scale_num,scale_den,zero_num,zero_den) VALUES (?,?,?,?,?,?,?,?,?,?)",
+            "scale_num,scale_den,zero_num,zero_den,kind) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
             (session.revision, layout.hdu_index, placement.ordinal, column.name,
              column.repeat, column.tnull, str(scale.numerator), str(scale.denominator),
-             str(zero.numerator), str(zero.denominator)),
+             str(zero.numerator), str(zero.denominator), _kind_code(column.kind)),
         )
 
 
 def _column(record):
-    ordinal, name, repeat, tnull, sn, sd, zn, zd = record
+    ordinal, name, repeat, tnull, sn, sd, zn, zd, code = record
+    if code == "fixed":
+        kind = FixedJType(repeat)
+    elif code in ("P", "Q"):
+        if repeat != 1:
+            raise ValueError("stored variable descriptor repeat corrupted")
+        kind = VariableJType(code)
+    else:
+        raise ValueError("unknown stored column kind")
     return ordinal, FixedColumn(
-        name, FixedJType(repeat), tnull,
+        name, kind, tnull,
         Scaling(Fraction(int(sn), int(sd)), Fraction(int(zn), int(zd))),
     )
 
 
+_COLUMN_FIELDS = "ordinal,name,repeat,tnull,scale_num,scale_den,zero_num,zero_den,kind"
+
+
 def load_column(connection, revision, hdu_index, ordinal):
     record = connection.execute(
-        "SELECT ordinal,name,repeat,tnull,scale_num,scale_den,zero_num,zero_den "
-        "FROM columns WHERE revision=? AND hdu_index=? AND ordinal=?",
+        "SELECT " + _COLUMN_FIELDS + " FROM columns "
+        "WHERE revision=? AND hdu_index=? AND ordinal=?",
         (revision, hdu_index, ordinal),
     ).fetchone()
     if record is None:
@@ -53,8 +68,8 @@ def load_catalog(connection, revision):
     ):
         columns = []
         for record in connection.execute(
-            "SELECT ordinal,name,repeat,tnull,scale_num,scale_den,zero_num,zero_den "
-            "FROM columns WHERE revision=? AND hdu_index=? ORDER BY ordinal",
+            "SELECT " + _COLUMN_FIELDS + " FROM columns "
+            "WHERE revision=? AND hdu_index=? ORDER BY ordinal",
             (revision, hdu),
         ):
             ordinal, column = _column(record)

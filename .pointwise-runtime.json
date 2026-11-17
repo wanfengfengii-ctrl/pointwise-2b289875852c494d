@@ -3,20 +3,13 @@
   "kind": "cli",
   "setup": [],
   "verify": [
-    "python3.11",
-    "-B",
-    "-m",
-    "unittest",
-    "discover",
-    "-s",
-    "tests",
-    "-t",
-    ".",
-    "-v"
+    "bash",
+    "-c",
+    "python3.11 -B -m unittest discover -s tests -t . -v && python3.11 -B heap_cases.py verify"
   ],
   "demo": [
-    "python3.11",
-    "-B",
-    "examples.py"
+    "bash",
+    "-c",
+    "python3.11 -B examples.py && python3.11 -B heap_cases.py demo"
   ]
 }

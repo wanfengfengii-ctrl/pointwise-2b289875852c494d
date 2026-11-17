@@ -8,6 +8,8 @@ from spectra.columns.fixed import interpret_fixed_values
 
 def select_rows(connection, revision, column, lower, upper):
     target = resolve_column(connection, revision, column)
+    if target.column.kind.is_variable:
+        raise ValueError("row selection requires a fixed scalar column")
     if target.column.repeat != 1:
         raise ValueError("row selection requires a scalar column")
     if any(isinstance(value, bool) or not isinstance(value, (int, Fraction))

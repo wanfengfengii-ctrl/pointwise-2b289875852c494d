@@ -47,6 +47,25 @@ class ChunkReader:
             remaining -= count
         return b"".join(pieces)
 
+    def iter_exact(self, size):
+        """Yield successive pieces covering exactly size bytes.
+
+        Pieces are bounded by the current input block, so arbitrarily large
+        regions (gaps, heaps) stream without being materialized whole.
+        """
+        if type(size) is not int or size < 0:
+            raise ValueError("invalid read length")
+        remaining = size
+        while remaining:
+            if not self._available():
+                raise ValueError("truncated FITS input")
+            count = min(remaining, len(self._block) - self._offset)
+            piece = self._block[self._offset:self._offset + count]
+            self._offset += count
+            self._position += count
+            remaining -= count
+            yield piece
+
     def require_eof(self):
         if self.peek_byte() is not None:
             raise ValueError("unexpected trailing input")

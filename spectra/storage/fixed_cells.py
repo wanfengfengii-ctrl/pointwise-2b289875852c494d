@@ -48,11 +48,16 @@ class FixedCellStore:
             ordinal, count, first, last, shortest, longest = record
             if not 0 <= ordinal < len(layout.columns):
                 raise ValueError("unexpected staged column")
-            width = layout.columns[ordinal].width
+            placement = layout.columns[ordinal]
+            if placement.column.kind.is_variable:
+                raise ValueError("variable column staged as fixed")
+            width = placement.width
             if (count != layout.row_count or first != 0 or last != layout.row_count - 1
                     or shortest != width or longest != width):
                 raise ValueError("incomplete staged fixed column")
             seen += 1
-        expected = len(layout.columns) if layout.row_count else 0
+        fixed = sum(1 for placement in layout.columns
+                    if not placement.column.kind.is_variable)
+        expected = fixed if layout.row_count else 0
         if seen != expected:
             raise ValueError("missing staged fixed column")

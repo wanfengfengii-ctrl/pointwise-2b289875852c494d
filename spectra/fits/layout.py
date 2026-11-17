@@ -3,7 +3,10 @@ import re
 
 from spectra.fits.headers import require_keyword
 from spectra.fits.padding import padding_length
-from spectra.columns.fixed import parse_fixed_column, FixedColumn
+from spectra.columns.fixed import parse_column, FixedColumn
+
+
+_MAX_SQLITE_INTEGER = (1 << 63) - 1
 
 
 @dataclass(frozen=True)
@@ -23,19 +26,37 @@ class ColumnPlacement:
 
 
 @dataclass(frozen=True)
-class FixedTableLayout:
+class TableLayout:
     hdu_index: int
     row_width: int
     row_count: int
     columns: tuple
+    pcount: int
+    theap: int
+
+    @property
+    def row_area_size(self):
+        return self.row_width * self.row_count
+
+    @property
+    def gap_size(self):
+        return self.theap - self.row_area_size
+
+    @property
+    def heap_length(self):
+        return self.row_area_size + self.pcount - self.theap
 
     @property
     def data_size(self):
-        return self.row_width * self.row_count
+        return self.row_area_size + self.pcount
 
     @property
     def padding_size(self):
         return padding_length(self.data_size)
+
+    @property
+    def has_variable(self):
+        return any(placement.column.kind.is_variable for placement in self.columns)
 
 
 def _integer(header, key, minimum=None):
@@ -80,11 +101,10 @@ def build_primary_layout(header):
     return PrimaryLayout()
 
 
-def build_fixed_layout(header, hdu_index):
+def build_table_layout(header, hdu_index):
     _equal(header, "XTENSION", "BINTABLE")
     _equal(header, "BITPIX", 8)
     _equal(header, "NAXIS", 2)
-    _equal(header, "PCOUNT", 0)
     _equal(header, "GCOUNT", 1)
     _axes(header, 2)
     _uncompressed(header)
@@ -99,15 +119,12 @@ def build_fixed_layout(header, hdu_index):
         match = re.fullmatch(r"T(?:TYPE|FORM|NULL|SCAL|ZERO)([0-9]+)", key)
         if match and (not 1 <= int(match[1]) <= fields or str(int(match[1])) != match[1]):
             raise ValueError("column keyword outside TFIELDS")
-    if "THEAP" in header.cards:
-        heap = _integer(header, "THEAP", 0)
-        if heap != width * rows:
-            raise ValueError("V1 accepts no heap or gap")
+    pcount = _integer(header, "PCOUNT", 0)
     placements = []
     names = set()
     offset = 0
     for index in range(1, fields + 1):
-        column = parse_fixed_column(header, index)
+        column = parse_column(header, index)
         if column.name in names:
             raise ValueError("duplicate column name")
         names.add(column.name)
@@ -115,4 +132,22 @@ def build_fixed_layout(header, hdu_index):
         offset += column.kind.byte_width
     if offset != width:
         raise ValueError("column widths do not equal row width")
-    return FixedTableLayout(hdu_index, width, rows, tuple(placements))
+    row_area = width * rows
+    has_variable = any(placement.column.kind.is_variable for placement in placements)
+    if "THEAP" in header.cards:
+        theap = _integer(header, "THEAP", 0)
+    else:
+        theap = row_area
+    if has_variable:
+        # The heap is [THEAP, R+PCOUNT); a gap [R, THEAP) is allowed.
+        if not row_area <= theap <= row_area + pcount:
+            raise ValueError("THEAP outside the row area and heap")
+    else:
+        # V1 rule: fixed-only tables keep PCOUNT=0 and no gap.
+        if pcount != 0:
+            raise ValueError("fixed-only tables require PCOUNT=0")
+        if theap != row_area:
+            raise ValueError("fixed-only tables accept no heap or gap")
+    if max(width, rows, row_area + pcount) > _MAX_SQLITE_INTEGER:
+        raise ValueError("unsupported FITS extent")
+    return TableLayout(hdu_index, width, rows, tuple(placements), pcount, theap)
